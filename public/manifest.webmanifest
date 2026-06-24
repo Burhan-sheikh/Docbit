@@ -1,0 +1,13 @@
+{
+  "name": "LocalPro - Hyperlocal Service Marketplace",
+  "short_name": "LocalPro",
+  "description": "Book trusted nearby service providers with realtime chat, maps, payments, and tracking.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05080f",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
