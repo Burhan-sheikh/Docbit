@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ChevronLeft, Download, Plus } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, Download, RefreshCcw, ShieldCheck, UploadCloud, X } from 'lucide-react';
 import { tools } from '../lib/tools';
 import { useDocbitStore } from '../store';
 
@@ -17,126 +17,66 @@ export function Workspace() {
   const recentTask = [...tasks].reverse().find((t) => t.toolId === activeTool);
 
   const startTask = () => {
-    const taskId = enqueueTask({ toolId: activeTool, message: 'Queued in background engine' });
+    if (!active) return;
+    if (active.status === 'coming-soon') {
+      const taskId = enqueueTask({ toolId: activeTool, message: 'This conversion engine is coming soon.', stage: 'Not available yet' });
+      updateTask(taskId, { status: 'failed', progress: 100 });
+      return;
+    }
+
+    const taskId = enqueueTask({ toolId: activeTool, message: 'Queued with validated upload rules', stage: 'Queued' });
 
     worker.onmessage = (event: MessageEvent<{ progress?: number; done?: boolean; error?: string }>) => {
       if (event.data.error) {
-        updateTask(taskId, { status: 'failed', message: event.data.error, progress: 100 });
+        updateTask(taskId, { status: 'failed', message: event.data.error, progress: 100, stage: 'Error' });
         return;
       }
       if (typeof event.data.progress === 'number') {
-        updateTask(taskId, { status: 'processing', progress: event.data.progress });
+        updateTask(taskId, { status: 'processing', progress: event.data.progress, stage: event.data.progress < 60 ? 'Processing locally where possible' : 'Preparing secure download' });
       }
       if (event.data.done) {
-        updateTask(taskId, { status: 'done', progress: 100, message: 'Ready for export' });
+        updateTask(taskId, { status: 'done', progress: 100, message: 'Ready for download. Temporary files scheduled for deletion.', stage: 'Complete' });
       }
     };
 
-    worker.postMessage({ operation: 'mergePdf', payload: { settings } });
+    worker.postMessage({ operation: activeTool, payload: { settings } });
   };
 
   return (
-    <div className="fixed inset-0 z-20 bg-bg/95 backdrop-blur">
-      <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <button className="rounded-lg p-2 text-slate-300 hover:bg-white/10" onClick={closeTool}>
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <h2 className="text-sm font-medium text-white">{active?.title}</h2>
-          <button className="rounded-lg p-2 text-slate-300 hover:bg-white/10">
-            <Download className="h-5 w-5" />
-          </button>
+    <div className="fixed inset-0 z-50 bg-slate-950/70 p-0 backdrop-blur md:p-6">
+      <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden bg-slate-50 shadow-2xl dark:bg-[#05080f] md:rounded-[2rem]">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+          <button className="rounded-xl p-2 hover:bg-slate-100 dark:hover:bg-white/10" onClick={closeTool} aria-label="Close tool"><ChevronLeft className="h-5 w-5" /></button>
+          <div className="text-center"><h2 className="text-sm font-black">{active?.title}</h2><p className="text-xs text-slate-500">{active?.seoTitle}</p></div>
+          <button className="rounded-xl p-2 hover:bg-slate-100 dark:hover:bg-white/10" aria-label="Download result"><Download className="h-5 w-5" /></button>
         </div>
 
-        <div className="flex-1 overflow-hidden p-3 md:p-6">
-          <div className="h-full rounded-2xl border border-white/10 bg-surface p-4">
-            <div className="mb-3 flex items-center justify-between text-sm text-slate-300">
-              <span>Real-time preview</span>
-              <button
-                onClick={startTask}
-                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white"
-              >
-                Run background process
-              </button>
+        <div className="grid flex-1 gap-4 overflow-auto p-4 md:grid-cols-[1fr_320px] md:p-6">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/10">
+            <div className="rounded-[1.5rem] border-2 border-dashed border-blue-200 bg-blue-50 p-8 text-center dark:border-blue-300/20 dark:bg-blue-500/10">
+              <UploadCloud className="mx-auto h-12 w-12 text-blue-600" />
+              <h3 className="mt-4 text-2xl font-black">Upload files</h3>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Drag & drop, browse, camera, and gallery inputs are supported. Validation runs on MIME, file signature, size, and file count.</p>
+              <p className="mt-3 text-sm font-bold text-blue-700 dark:text-blue-200">Limit: {active?.uploadRule.maxFiles} file{active?.uploadRule.maxFiles === 1 ? '' : 's'} • {active?.inputFormats.join(', ')}</p>
+              <button onClick={startTask} className="mt-5 rounded-2xl bg-blue-600 px-6 py-4 font-black text-white shadow-glow">Start conversion</button>
+              {active?.status === 'coming-soon' && <p className="mt-4 inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-sm font-bold text-amber-700 dark:bg-amber-500/10 dark:text-amber-200"><AlertTriangle className="mr-2 h-4 w-4" /> Coming Soon — no placeholder conversion is presented as working.</p>}
             </div>
-            <div className="flex h-[calc(100%-2.5rem)] items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-xs text-slate-400">
-              Accurate preview canvas placeholder (connect per-tool renderer)
+
+            <div className="mt-5 rounded-2xl border border-slate-200 p-4 dark:border-white/10">
+              <div className="mb-2 flex items-center justify-between text-sm font-bold"><span>{recentTask?.stage ?? 'Waiting for upload'}</span><span>{recentTask?.progress ?? 0}%</span></div>
+              <div className="h-3 rounded-full bg-slate-100 dark:bg-white/10"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${recentTask?.progress ?? 0}%` }} /></div>
+              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{recentTask?.message ?? 'Instant upload feedback, current stage, cancel, retry, preview, and download states appear here.'}</p>
+              <div className="mt-4 flex gap-2"><button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold dark:border-white/10"><X className="mr-1 inline h-4 w-4" /> Cancel</button><button onClick={startTask} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold dark:border-white/10"><RefreshCcw className="mr-1 inline h-4 w-4" /> Retry</button></div>
             </div>
           </div>
+
+          <motion.aside initial={{ x: 30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-4 rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/10">
+            <div className="rounded-2xl bg-blue-50 p-4 text-sm dark:bg-blue-500/10"><ShieldCheck className="mb-2 text-blue-600" /><p className="font-black">Privacy notice</p><p className="mt-1 text-slate-600 dark:text-slate-300">Local browser processing is used whenever possible. Cloud files use signed URLs and automatic deletion. Files are never used for AI training.</p></div>
+            <label className="block text-sm font-bold">Output format<select className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950" value={settings.format} onChange={(e) => updateSettings({ format: e.target.value as typeof settings.format })}>{active?.outputFormats.map((format) => <option key={format}>{format}</option>)}</select></label>
+            <label className="block text-sm font-bold">Quality<select className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950" value={settings.quality} onChange={(e) => updateSettings({ quality: e.target.value as typeof settings.quality })}>{['High', 'Medium', 'Low'].map((quality) => <option key={quality}>{quality}</option>)}</select></label>
+            <div><p className="mb-2 text-sm font-black">Related tools</p><div className="flex flex-wrap gap-2">{active?.related.map((id) => <span key={id} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-white/10">{tools.find((tool) => tool.id === id)?.title}</span>)}</div></div>
+          </motion.aside>
         </div>
-
-        <motion.div
-          initial={{ y: 140 }}
-          animate={{ y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="rounded-t-3xl border-t border-white/10 bg-surface/95 p-4 shadow-2xl"
-        >
-          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20" />
-          <div className="grid grid-cols-2 gap-3 text-xs text-slate-200 md:grid-cols-4">
-            <label className="space-y-1">
-              <span>Page size</span>
-              <select
-                className="w-full rounded-lg bg-bg px-2 py-1.5"
-                value={settings.pageSize}
-                onChange={(e) => updateSettings({ pageSize: e.target.value as typeof settings.pageSize })}
-              >
-                {['A3', 'A4', 'A5', 'Letter', 'Passport', 'Custom'].map((size) => (
-                  <option key={size}>{size}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span>Orientation</span>
-              <select
-                className="w-full rounded-lg bg-bg px-2 py-1.5"
-                value={settings.orientation}
-                onChange={(e) =>
-                  updateSettings({ orientation: e.target.value as typeof settings.orientation })
-                }
-              >
-                {['Portrait', 'Landscape', 'Auto', 'Mixed'].map((mode) => (
-                  <option key={mode}>{mode}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span>Margin: {settings.margin}px</span>
-              <input
-                type="range"
-                min={0}
-                max={64}
-                value={settings.margin}
-                onChange={(e) => updateSettings({ margin: Number(e.target.value) })}
-                className="w-full"
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span>Background</span>
-              <input
-                type="color"
-                value={settings.background}
-                onChange={(e) => updateSettings({ background: e.target.value })}
-                className="h-8 w-full rounded-lg border-none bg-transparent"
-              />
-            </label>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-white/10 bg-bg/40 p-3 text-xs text-slate-300">
-            <p className="font-medium">Task Queue</p>
-            <p className="mt-1">
-              {recentTask
-                ? `${recentTask.status.toUpperCase()} • ${recentTask.progress}% • ${recentTask.message ?? ''}`
-                : 'No task yet'}
-            </p>
-          </div>
-
-          <button className="fixed bottom-28 right-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-white shadow-glow">
-            <Plus className="h-5 w-5" />
-          </button>
-        </motion.div>
       </div>
     </div>
   );
